@@ -1,0 +1,17 @@
+{
+  "name": "cncf-landscape-gartner",
+  "version": "1.0.0",
+  "description": "CNCF Landscape with Gartner Hype Cycle assignment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "pg": "^8.13.3",
+    "express": "^4.18.2",
+    "express-session": "^1.19.0",
+    "js-yaml": "^4.1.0",
+    "node-fetch": "^2.7.0"
+  }
+}

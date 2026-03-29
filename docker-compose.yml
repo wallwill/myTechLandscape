@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - SESSION_SECRET=mtp-local-dev-secret
+      - DATABASE_URL=postgresql://mtp:mtp@host.docker.internal:5433/mtp
+    restart: unless-stopped
