@@ -182,6 +182,20 @@ module.exports = [
     UNIQUE(technology_id, tag)
   )`,
 
+  // Landscape Assignments
+  `CREATE TABLE IF NOT EXISTS assignments (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL REFERENCES tenants(id),
+    project_id  TEXT NOT NULL,
+    project_name TEXT,
+    stage       TEXT NOT NULL,
+    owner       TEXT,
+    notes       TEXT,
+    updated_at  BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    updated_by  TEXT REFERENCES users(id),
+    UNIQUE(tenant_id, project_id)
+  )`,
+
   // Ingest Sources
   `CREATE TABLE IF NOT EXISTS ingest_sources (
     id           TEXT PRIMARY KEY,
@@ -265,6 +279,7 @@ module.exports = [
   // Indexes
   `CREATE INDEX IF NOT EXISTS idx_tech_tenant      ON technologies(tenant_id)`,
   `CREATE INDEX IF NOT EXISTS idx_cards_tenant     ON technology_cards(tenant_id, state)`,
+  `CREATE INDEX IF NOT EXISTS idx_assignments_tenant ON assignments(tenant_id, stage)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_entity     ON audit_log(tenant_id, entity_type, entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_time       ON audit_log(tenant_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_exceptions_lob   ON lob_exceptions(tenant_id, lob, is_active)`,

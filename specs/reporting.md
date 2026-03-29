@@ -33,6 +33,16 @@ Requires: `requireAuth`
 }
 ```
 
+Planned additions for governance workflow:
+- `queue_items_new`
+- `queue_items_overdue`
+- `requests_awaiting_decision`
+- `avg_days_to_decision`
+- `evaluations_in_progress`
+- `requests_by_capability`
+- `requests_by_evaluator`
+- `requests_by_decision_outcome`
+
 ### GET /api/reporting/sunset-calendar
 Technologies with sunset dates, sorted ascending.
 Requires: `requireAuth`

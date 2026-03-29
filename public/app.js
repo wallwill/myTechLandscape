@@ -1,22 +1,38 @@
 const STAGES = [
-  { value: 'Invest',    color: '#16a34a', bg: '#dcfce7', border: '#86efac' },
-  { value: 'Maintain',  color: '#2563eb', bg: '#dbeafe', border: '#93c5fd' },
-  { value: 'Tolerate',  color: '#d97706', bg: '#fef3c7', border: '#fcd34d' },
+  { value: 'Invest', color: '#16a34a', bg: '#dcfce7', border: '#86efac' },
+  { value: 'Maintain', color: '#2563eb', bg: '#dbeafe', border: '#93c5fd' },
+  { value: 'Tolerate', color: '#d97706', bg: '#fef3c7', border: '#fcd34d' },
   { value: 'Eliminate', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
 ];
 
 const STATE = {
   user: null,
-  teams: [],
   currentTeamId: null,
   projects: [],
   assignMap: {},
   currentProject: null,
+  adminTenants: [],
+  adminUsers: [],
+  editingTenantId: null,
+  editingAdminId: null,
 };
 
-// --- API ---
+function getTenantSlug() {
+  return (localStorage.getItem('tenantSlug') || 'default').trim();
+}
+
+function setTenantSlug(slug) {
+  localStorage.setItem('tenantSlug', (slug || 'default').trim());
+}
+
 async function api(method, url, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Tenant-ID': getTenantSlug(),
+    },
+  };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
   const data = await res.json().catch(() => ({}));
@@ -24,14 +40,17 @@ async function api(method, url, body) {
   return data;
 }
 
-// --- Init ---
 async function init() {
   try {
     const me = await api('GET', '/api/auth/me');
-    if (!me) { showLogin(); return; }
+    if (!me) {
+      showLogin();
+      return;
+    }
     STATE.user = me;
     await startApp();
   } catch (e) {
+    console.error('App bootstrap failed during init:', e);
     showLogin();
   }
 }
@@ -39,29 +58,46 @@ async function init() {
 function showLogin() {
   document.getElementById('login-overlay').classList.remove('hidden');
   document.getElementById('main-app').classList.add('hidden');
+  document.getElementById('login-tenant').value = getTenantSlug();
   setTimeout(() => document.getElementById('login-username').focus(), 50);
 }
 
 async function startApp() {
   document.getElementById('login-overlay').classList.add('hidden');
   document.getElementById('main-app').classList.remove('hidden');
-
-  STATE.teams = await api('GET', '/api/teams');
-  STATE.currentTeamId = STATE.user.teamId || STATE.teams[0]?.id || null;
-
-  populateTeamSelector();
   updateUserMenu();
 
-  const [projects, assignments] = await Promise.all([
+  const [projectsResult, assignmentsResult] = await Promise.allSettled([
     api('GET', '/api/landscape'),
-    STATE.currentTeamId ? api('GET', `/api/assignments?team_id=${STATE.currentTeamId}`) : Promise.resolve([]),
+    Promise.resolve([]),
   ]);
 
-  STATE.projects = projects;
-  buildAssignMap(assignments);
+  if (projectsResult.status !== 'fulfilled') {
+    showBootstrapError(projectsResult.reason);
+    throw projectsResult.reason;
+  }
+
+  if (assignmentsResult.status !== 'fulfilled') {
+    console.warn('Assignments API unavailable during bootstrap; continuing without assignments.', assignmentsResult.reason);
+  }
+
+  STATE.projects = projectsResult.value;
+  buildAssignMap(assignmentsResult.status === 'fulfilled' ? assignmentsResult.value : []);
+  resetFilters();
   populateCategoryFilter();
   render();
   updateStats();
+}
+
+function showBootstrapError(err) {
+  const app = document.getElementById('app');
+  const message = err?.message || 'Unable to load CNCF landscape data.';
+  app.innerHTML = `
+    <div class="no-results">
+      <strong>Unable to load CNCF landscape data.</strong><br>
+      ${esc(message)}
+    </div>
+  `;
 }
 
 function buildAssignMap(assignments) {
@@ -69,37 +105,22 @@ function buildAssignMap(assignments) {
   assignments.forEach(a => { STATE.assignMap[a.project_id] = a; });
 }
 
-// --- Team selector ---
-function populateTeamSelector() {
-  const sel = document.getElementById('team-selector');
-  if (!STATE.teams.length) {
-    sel.innerHTML = '<option value="">No teams</option>';
-    return;
-  }
-  sel.innerHTML = STATE.teams.map(t =>
-    `<option value="${t.id}" ${t.id === STATE.currentTeamId ? 'selected' : ''}>${esc(t.name)}</option>`
-  ).join('');
+function resetFilters() {
+  document.getElementById('search').value = '';
+  document.getElementById('filter-category').value = '';
+  document.getElementById('filter-stage').value = '';
+  document.getElementById('filter-cncf').value = '';
 }
 
-async function onTeamChange() {
-  STATE.currentTeamId = parseInt(document.getElementById('team-selector').value) || null;
-  if (!STATE.currentTeamId) { STATE.assignMap = {}; render(); updateStats(); return; }
-  const assignments = await api('GET', `/api/assignments?team_id=${STATE.currentTeamId}`);
-  buildAssignMap(assignments);
-  render();
-  updateStats();
-}
-
-// --- User menu ---
 function updateUserMenu() {
   document.getElementById('user-display-name').textContent = STATE.user.username;
   document.getElementById('user-avatar').textContent = STATE.user.username[0].toUpperCase();
-  if (STATE.user.role === 'admin') {
+  document.getElementById('tenant-label').textContent = STATE.user.tenantName || STATE.user.tenantSlug || 'Unknown tenant';
+  if (STATE.user.role === 'platform_admin') {
     document.getElementById('btn-admin-panel').classList.remove('hidden');
   }
 }
 
-// --- Filters ---
 function populateCategoryFilter() {
   const sel = document.getElementById('filter-category');
   const cats = [...new Set(STATE.projects.map(p => p.category))].sort();
@@ -109,9 +130,9 @@ function populateCategoryFilter() {
 
 function getFilteredProjects() {
   const search = document.getElementById('search').value.toLowerCase().trim();
-  const cat    = document.getElementById('filter-category').value;
-  const stage  = document.getElementById('filter-stage').value;
-  const cncf   = document.getElementById('filter-cncf').value;
+  const cat = document.getElementById('filter-category').value;
+  const stage = document.getElementById('filter-stage').value;
+  const cncf = document.getElementById('filter-cncf').value;
 
   return STATE.projects.filter(p => {
     if (search && !p.name.toLowerCase().includes(search) &&
@@ -126,7 +147,6 @@ function getFilteredProjects() {
   });
 }
 
-// --- Render ---
 function render() {
   const app = document.getElementById('app');
   const projects = getFilteredProjects();
@@ -194,7 +214,6 @@ function renderCard(p) {
   `;
 }
 
-// --- Stats ---
 function updateStats() {
   const total = STATE.projects.length;
   const assigned = Object.keys(STATE.assignMap).length;
@@ -217,7 +236,6 @@ function updateStats() {
   `;
 }
 
-// --- Detail Modal ---
 async function openDetailModal(projectId) {
   const p = STATE.projects.find(x => x.id === projectId);
   if (!p) return;
@@ -232,7 +250,7 @@ async function openDetailModal(projectId) {
     titleEl.textContent = p.name;
   }
 
-  document.getElementById('modal-project-sub').textContent = `${p.category} › ${p.subcategory}`;
+  document.getElementById('modal-project-sub').textContent = `${p.category} > ${p.subcategory}`;
   const descEl = document.getElementById('modal-description');
   descEl.textContent = p.description || '';
   descEl.style.display = p.description ? '' : 'none';
@@ -250,16 +268,18 @@ async function openDetailModal(projectId) {
   document.getElementById('detail-modal').classList.remove('hidden');
 
   try {
-    const log = await api('GET', `/api/audit?team_id=${STATE.currentTeamId}&project_id=${encodeURIComponent(projectId)}`);
+    const log = await api('GET', `/api/audit/entity/assignment/${encodeURIComponent(projectId)}`);
     if (!log.length) {
       auditEl.innerHTML = '<div class="audit-empty">No changes recorded yet.</div>';
     } else {
       auditEl.innerHTML = log.map(entry => {
         const date = new Date(entry.created_at * 1000).toLocaleString();
+        const newValue = entry.new_value ? JSON.parse(entry.new_value) : null;
+        const stage = newValue?.stage || '';
         const actionLabel = { assign: 'Assigned to', update: 'Updated to', remove: 'Removed' }[entry.action] || entry.action;
-        const si = STAGES.find(s => s.value === entry.new_stage);
-        const stageSpan = entry.new_stage
-          ? `<span class="audit-stage" style="${si ? `color:${si.color}` : ''}">${esc(entry.new_stage)}</span>` : '';
+        const si = STAGES.find(s => s.value === stage);
+        const stageSpan = stage
+          ? `<span class="audit-stage" style="${si ? `color:${si.color}` : ''}">${esc(stage)}</span>` : '';
         return `
           <div class="audit-entry">
             <div class="audit-meta">
@@ -290,29 +310,37 @@ async function saveDetailModal() {
   const owner = document.getElementById('modal-owner').value.trim();
   const notes = document.getElementById('modal-notes').value.trim();
 
-  await api('POST', '/api/assignments', {
-    projectId: p.id, projectName: p.name, stage, owner, notes, teamId: STATE.currentTeamId,
-  });
+  try {
+    await api('POST', '/api/assignments', {
+      projectId: p.id, projectName: p.name, stage, owner, notes,
+    });
 
-  if (stage) {
-    STATE.assignMap[p.id] = { ...(STATE.assignMap[p.id] || {}), project_id: p.id, stage, owner, notes };
-  } else {
-    delete STATE.assignMap[p.id];
+    if (stage) {
+      STATE.assignMap[p.id] = { ...(STATE.assignMap[p.id] || {}), project_id: p.id, stage, owner, notes };
+    } else {
+      delete STATE.assignMap[p.id];
+    }
+
+    closeDetailModal();
+    render();
+    updateStats();
+  } catch (err) {
+    alert(err.message || 'Failed to save assignment');
   }
-
-  closeDetailModal();
-  render();
-  updateStats();
 }
 
 async function removeAssignment() {
   const p = STATE.currentProject;
   if (!p) return;
-  await api('POST', '/api/assignments', { projectId: p.id, projectName: p.name, stage: '', teamId: STATE.currentTeamId });
-  delete STATE.assignMap[p.id];
-  closeDetailModal();
-  render();
-  updateStats();
+  try {
+    await api('POST', '/api/assignments', { projectId: p.id, projectName: p.name, stage: '' });
+    delete STATE.assignMap[p.id];
+    closeDetailModal();
+    render();
+    updateStats();
+  } catch (err) {
+    alert(err.message || 'Failed to remove assignment');
+  }
 }
 
 function applyStageSelectStyle(el, stage) {
@@ -330,83 +358,167 @@ function applyStageSelectStyle(el, stage) {
   }
 }
 
-// --- Admin Modal ---
 async function openAdminModal() {
+  if (STATE.user.role !== 'platform_admin') return;
   document.getElementById('admin-modal').classList.remove('hidden');
-  await Promise.all([refreshAdminTeams(), refreshAdminUsers()]);
+  await Promise.all([refreshAdminTenants(), refreshAdminUsers()]);
 }
 
 function closeAdminModal() {
   document.getElementById('admin-modal').classList.add('hidden');
 }
 
-async function refreshAdminTeams() {
-  STATE.teams = await api('GET', '/api/teams');
-  document.querySelector('#teams-table tbody').innerHTML = STATE.teams.map(t => `
+async function refreshAdminTenants() {
+  STATE.adminTenants = await api('GET', '/api/tenants');
+  document.querySelector('#tenants-table tbody').innerHTML = STATE.adminTenants.map(t => `
     <tr>
       <td><strong>${esc(t.name)}</strong></td>
+      <td class="muted">${esc(t.slug)}</td>
+      <td>${esc(t.admin_count || 0)}</td>
+      <td>${t.is_active ? 'Active' : 'Inactive'}</td>
       <td class="muted">${new Date(t.created_at * 1000).toLocaleDateString()}</td>
-      <td><button class="btn-icon btn-danger-icon" onclick="deleteTeam(${t.id})">Delete</button></td>
+      <td>
+        <button class="btn-icon" onclick="editTenant('${esc(t.id)}')">Edit</button>
+        ${t.is_active ? `<button class="btn-icon btn-danger-icon" onclick="deleteTenant('${esc(t.id)}')">Deactivate</button>` : ''}
+      </td>
     </tr>
-  `).join('') || '<tr><td colspan="3" class="muted" style="text-align:center;padding:1rem">No teams yet</td></tr>';
+  `).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">No tenants yet</td></tr>';
 
-  const sel = document.getElementById('new-user-team');
-  sel.innerHTML = '<option value="">No team</option>' +
-    STATE.teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  const tenantSelect = document.getElementById('admin-tenant');
+  const options = STATE.adminTenants
+    .filter(t => t.is_active)
+    .map(t => `<option value="${t.id}">${esc(t.name)}</option>`)
+    .join('');
+  tenantSelect.innerHTML = options || '<option value="">No active tenants</option>';
 
-  populateTeamSelector();
+  if (!STATE.editingAdminId) {
+    tenantSelect.value = STATE.adminTenants.find(t => t.is_active)?.id || '';
+  }
 }
 
-async function addTeam() {
-  const name = document.getElementById('new-team-name').value.trim();
-  if (!name) return;
+function resetTenantForm() {
+  STATE.editingTenantId = null;
+  document.getElementById('tenant-name').value = '';
+  document.getElementById('tenant-slug').value = '';
+  document.getElementById('btn-cancel-tenant').classList.add('hidden');
+}
+
+function editTenant(id) {
+  const tenant = STATE.adminTenants.find(t => t.id === id);
+  if (!tenant) return;
+  STATE.editingTenantId = tenant.id;
+  document.getElementById('tenant-name').value = tenant.name || '';
+  document.getElementById('tenant-slug').value = tenant.slug || '';
+  document.getElementById('btn-cancel-tenant').classList.remove('hidden');
+  switchAdminTab('tenants');
+}
+
+async function saveTenant() {
+  const name = document.getElementById('tenant-name').value.trim();
+  const slug = document.getElementById('tenant-slug').value.trim();
+  if (!name || !slug) return alert('Tenant name and slug are required');
+
   try {
-    await api('POST', '/api/teams', { name });
-    document.getElementById('new-team-name').value = '';
-    await refreshAdminTeams();
-  } catch (e) { alert(e.message); }
-}
-
-async function deleteTeam(id) {
-  if (!confirm('Delete this team? All assignments for this team will be permanently removed.')) return;
-  await api('DELETE', `/api/teams/${id}`);
-  await refreshAdminTeams();
-}
-
-async function refreshAdminUsers() {
-  const users = await api('GET', '/api/users');
-  document.querySelector('#users-table tbody').innerHTML = users.map(u => `
-    <tr>
-      <td><strong>${esc(u.username)}</strong></td>
-      <td><span class="role-badge role-${u.role}">${esc(u.role)}</span></td>
-      <td class="muted">${esc(u.team_name || '—')}</td>
-      <td class="muted">${new Date(u.created_at * 1000).toLocaleDateString()}</td>
-      <td>${u.id !== STATE.user.id ? `<button class="btn-icon btn-danger-icon" onclick="deleteUser(${u.id})">Delete</button>` : ''}</td>
-    </tr>
-  `).join('');
-}
-
-async function addUser() {
-  const username = document.getElementById('new-user-username').value.trim();
-  const password = document.getElementById('new-user-password').value;
-  const teamId = document.getElementById('new-user-team').value || null;
-  const role = document.getElementById('new-user-role').value;
-  if (!username || !password) return alert('Username and password are required');
-  try {
-    await api('POST', '/api/users', { username, password, role, teamId: teamId ? parseInt(teamId) : null });
-    document.getElementById('new-user-username').value = '';
-    document.getElementById('new-user-password').value = '';
+    if (STATE.editingTenantId) {
+      await api('PUT', `/api/tenants/${STATE.editingTenantId}`, { name, slug });
+    } else {
+      await api('POST', '/api/tenants', { name, slug });
+    }
+    resetTenantForm();
+    await refreshAdminTenants();
     await refreshAdminUsers();
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
-async function deleteUser(id) {
-  if (!confirm('Delete this user?')) return;
-  await api('DELETE', `/api/users/${id}`);
+async function deleteTenant(id) {
+  if (!confirm('Deactivate this tenant?')) return;
+  await api('DELETE', `/api/tenants/${id}`);
+  if (STATE.editingTenantId === id) resetTenantForm();
+  await refreshAdminTenants();
   await refreshAdminUsers();
 }
 
-// --- Change Password ---
+async function refreshAdminUsers() {
+  STATE.adminUsers = await api('GET', '/api/tenants/admin-users');
+  document.querySelector('#admins-table tbody').innerHTML = STATE.adminUsers.map(u => `
+    <tr>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td><span class="role-badge role-${u.role}">${esc(u.role)}</span></td>
+      <td class="muted">${esc(u.tenant_name || u.tenant_slug || '-')}</td>
+      <td class="muted">${esc(u.email || '-')}</td>
+      <td>${u.is_active ? 'Active' : 'Inactive'}</td>
+      <td class="muted">${new Date(u.created_at * 1000).toLocaleDateString()}</td>
+      <td>
+        <button class="btn-icon" onclick="editAdmin('${esc(u.id)}')">Edit</button>
+        ${u.id !== STATE.user.id && u.is_active ? `<button class="btn-icon btn-danger-icon" onclick="deleteAdmin('${esc(u.id)}')">Deactivate</button>` : ''}
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">No admin users yet</td></tr>';
+}
+
+function resetAdminForm() {
+  STATE.editingAdminId = null;
+  document.getElementById('admin-tenant').value = STATE.adminTenants.find(t => t.is_active)?.id || '';
+  document.getElementById('admin-username').value = '';
+  document.getElementById('admin-display-name').value = '';
+  document.getElementById('admin-email').value = '';
+  document.getElementById('admin-password').value = '';
+  document.getElementById('admin-role').value = 'tenant_admin';
+  document.getElementById('btn-cancel-admin').classList.add('hidden');
+}
+
+function editAdmin(id) {
+  const user = STATE.adminUsers.find(u => u.id === id);
+  if (!user) return;
+  STATE.editingAdminId = user.id;
+  document.getElementById('admin-tenant').value = user.tenant_id || '';
+  document.getElementById('admin-username').value = user.username || '';
+  document.getElementById('admin-display-name').value = user.display_name || '';
+  document.getElementById('admin-email').value = user.email || '';
+  document.getElementById('admin-password').value = '';
+  document.getElementById('admin-role').value = user.role || 'tenant_admin';
+  document.getElementById('btn-cancel-admin').classList.remove('hidden');
+  switchAdminTab('admins');
+}
+
+async function saveAdmin() {
+  const tenant_id = document.getElementById('admin-tenant').value;
+  const username = document.getElementById('admin-username').value.trim();
+  const display_name = document.getElementById('admin-display-name').value.trim();
+  const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
+  const role = document.getElementById('admin-role').value;
+
+  if (!tenant_id || !username) return alert('Tenant and username are required');
+  if (!STATE.editingAdminId && !password) return alert('Password is required');
+
+  try {
+    const payload = { tenant_id, username, display_name, email, role };
+    if (password) payload.password = password;
+
+    if (STATE.editingAdminId) {
+      await api('PUT', `/api/tenants/admin-users/${STATE.editingAdminId}`, payload);
+    } else {
+      await api('POST', '/api/tenants/admin-users', payload);
+    }
+    resetAdminForm();
+    await refreshAdminTenants();
+    await refreshAdminUsers();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteAdmin(id) {
+  if (!confirm('Deactivate this admin user?')) return;
+  await api('DELETE', `/api/tenants/admin-users/${id}`);
+  if (STATE.editingAdminId === id) resetAdminForm();
+  await refreshAdminTenants();
+  await refreshAdminUsers();
+}
+
 function openPasswordModal() {
   ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('pw-error').classList.add('hidden');
@@ -420,9 +532,9 @@ function closePasswordModal() {
 
 async function savePassword() {
   const current = document.getElementById('pw-current').value;
-  const newPw   = document.getElementById('pw-new').value;
+  const newPw = document.getElementById('pw-new').value;
   const confirm = document.getElementById('pw-confirm').value;
-  const errEl   = document.getElementById('pw-error');
+  const errEl = document.getElementById('pw-error');
   errEl.classList.add('hidden');
 
   if (newPw !== confirm) {
@@ -440,29 +552,30 @@ async function savePassword() {
   }
 }
 
-// --- Admin tabs ---
 function switchAdminTab(tab) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  document.getElementById('tab-teams').classList.toggle('hidden', tab !== 'teams');
-  document.getElementById('tab-users').classList.toggle('hidden', tab !== 'users');
+  document.getElementById('tab-tenants').classList.toggle('hidden', tab !== 'tenants');
+  document.getElementById('tab-admins').classList.toggle('hidden', tab !== 'admins');
 }
 
-// --- User dropdown ---
 function toggleUserDropdown() {
   document.getElementById('user-dropdown').classList.toggle('hidden');
 }
+
 function closeUserDropdown() {
   document.getElementById('user-dropdown').classList.add('hidden');
 }
 
-// --- Login ---
 async function handleLogin(e) {
   e.preventDefault();
+  const tenantSlug = document.getElementById('login-tenant').value.trim();
   const username = document.getElementById('login-username').value;
   const password = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-error');
   errEl.classList.add('hidden');
   try {
+    if (!tenantSlug) throw new Error('Tenant slug is required');
+    setTenantSlug(tenantSlug);
     STATE.user = await api('POST', '/api/auth/login', { username, password });
     await startApp();
   } catch (err) {
@@ -471,35 +584,36 @@ async function handleLogin(e) {
   }
 }
 
-// --- Logout ---
 async function logout() {
   await api('POST', '/api/auth/logout');
-  STATE.user = null; STATE.projects = []; STATE.assignMap = {};
+  STATE.user = null;
+  STATE.projects = [];
+  STATE.assignMap = {};
   showLogin();
 }
 
-// --- Export ---
 function exportCSV() {
   window.location.href = `/api/export/csv?team_id=${STATE.currentTeamId}`;
 }
+
 function exportPDF() {
   window.print();
 }
 
-// --- Escape ---
 function esc(str) {
   if (str === null || str === undefined) return '';
   return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-// --- Event bindings ---
 document.getElementById('login-form').addEventListener('submit', handleLogin);
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('filter-category').addEventListener('change', render);
 document.getElementById('filter-stage').addEventListener('change', render);
 document.getElementById('filter-cncf').addEventListener('change', render);
-document.getElementById('team-selector').addEventListener('change', onTeamChange);
 document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
 document.getElementById('btn-export-pdf').addEventListener('click', exportPDF);
 
@@ -519,9 +633,12 @@ document.getElementById('modal-stage').addEventListener('change', function () { 
 
 document.getElementById('admin-close').addEventListener('click', closeAdminModal);
 document.getElementById('admin-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeAdminModal(); });
-document.getElementById('btn-add-team').addEventListener('click', addTeam);
-document.getElementById('btn-add-user').addEventListener('click', addUser);
-document.getElementById('new-team-name').addEventListener('keydown', e => { if (e.key === 'Enter') addTeam(); });
+document.getElementById('btn-save-tenant').addEventListener('click', saveTenant);
+document.getElementById('btn-cancel-tenant').addEventListener('click', resetTenantForm);
+document.getElementById('btn-save-admin').addEventListener('click', saveAdmin);
+document.getElementById('btn-cancel-admin').addEventListener('click', resetAdminForm);
+document.getElementById('tenant-name').addEventListener('keydown', e => { if (e.key === 'Enter') saveTenant(); });
+document.getElementById('tenant-slug').addEventListener('keydown', e => { if (e.key === 'Enter') saveTenant(); });
 document.querySelectorAll('.admin-tab').forEach(t => t.addEventListener('click', () => switchAdminTab(t.dataset.tab)));
 
 document.getElementById('password-close').addEventListener('click', closePasswordModal);
@@ -529,4 +646,6 @@ document.getElementById('pw-cancel').addEventListener('click', closePasswordModa
 document.getElementById('pw-save').addEventListener('click', savePassword);
 document.getElementById('password-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closePasswordModal(); });
 
+resetTenantForm();
+resetAdminForm();
 init();

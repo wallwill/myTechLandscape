@@ -1,28 +1,23 @@
 ---
 title: Export Spec
-module: src/routes/export.js
+status: partial
+module: src/routes/reporting.js
 ---
 
 # Export
 
-Provides data export for a team's current assignments.
+Export behavior is currently tenant-scoped and implemented under reporting routes.
 
-## Endpoints
+## Current Endpoints
 
 ### GET /api/export/csv
-Download all CNCF projects merged with the team's assignments as a CSV file.
-Requires: `requireAuth`
+Legacy frontend references may still point here, but the mounted reporting route exposes export behavior alongside tenant-aware reporting.
 
-**Query**: `?team_id=<id>` (defaults to session's teamId)
-**Response**: `text/csv` attachment, filename `cncf-landscape-assignments.csv`
+### GET /api/export/json
+Tenant-scoped JSON export.
 
-## CSV Schema
-```
-Name, Category, Subcategory, CNCF Status, Stage, Owner, Notes, Last Updated, Updated By
-```
+## Notes
 
-**Behavior**:
-- Fetches full landscape (uses cache)
-- Joins with team's assignments by `project_id`
-- All fields are double-quote escaped
-- `Last Updated` is ISO 8601 UTC when assignment exists, empty otherwise
+- old team-based export descriptions are obsolete
+- tenant context is resolved before export runs
+- this spec should be expanded from `src/routes/reporting.js` and `src/reporting/*` if export behavior becomes a primary workflow

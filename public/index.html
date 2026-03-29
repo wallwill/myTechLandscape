@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CNCF Landscape — Technology Lifecycle</title>
+  <title>My Enterprise Technology Policy Engine</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,11 +14,15 @@
     <div class="login-brand">
       <div class="login-icon">&#9670;</div>
       <div>
-        <div class="login-title">CNCF Technology Lifecycle</div>
+        <div class="login-title">My Enterprise Technology Policy Engine</div>
         <div class="login-subtitle">Enterprise Portfolio Management</div>
       </div>
     </div>
     <form id="login-form" autocomplete="on">
+      <div class="form-group">
+        <label for="login-tenant">Tenant Slug</label>
+        <input type="text" id="login-tenant" autocomplete="organization" required placeholder="default">
+      </div>
       <div class="form-group">
         <label for="login-username">Username</label>
         <input type="text" id="login-username" autocomplete="username" required placeholder="Enter username">
@@ -38,12 +42,12 @@
   <header>
     <div class="header-top">
       <div class="header-left">
-        <h1>CNCF Landscape <span>Technology Lifecycle</span></h1>
+        <h1>My Enterprise <span>Technology Policy Engine</span></h1>
       </div>
       <div class="header-right">
         <div class="team-selector-wrap">
-          <label for="team-selector">Team / BU</label>
-          <select id="team-selector"></select>
+          <label>Tenant</label>
+          <div class="tenant-pill" id="tenant-label">Default</div>
         </div>
         <button id="btn-export-csv" class="btn btn-outline" title="Download assignments as CSV">&#8595; CSV</button>
         <button id="btn-export-pdf" class="btn btn-outline" title="Print or save as PDF">&#9113; Print</button>
@@ -141,43 +145,48 @@
     <div class="modal-header">
       <div class="modal-header-text">
         <div class="modal-title">Admin Panel</div>
-        <div class="modal-subtitle">Manage teams, business units, and user accounts</div>
+        <div class="modal-subtitle">Manage tenants and tenant administrator accounts</div>
       </div>
       <button class="modal-close" id="admin-close" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div class="admin-tabs">
-        <button class="admin-tab active" data-tab="teams">Teams / Business Units</button>
-        <button class="admin-tab" data-tab="users">Users</button>
+        <button class="admin-tab active" data-tab="tenants">Tenants</button>
+        <button class="admin-tab" data-tab="admins">Tenant Admins</button>
       </div>
 
-      <div id="tab-teams" class="tab-content">
+      <div id="tab-tenants" class="tab-content">
         <div class="tab-actions">
-          <input type="text" id="new-team-name" placeholder="New team or business unit name...">
-          <button class="btn btn-primary" id="btn-add-team">Add Team</button>
+          <input type="text" id="tenant-name" placeholder="Tenant name">
+          <input type="text" id="tenant-slug" placeholder="Tenant slug">
+          <button class="btn btn-primary" id="btn-save-tenant">Save Tenant</button>
+          <button class="btn btn-ghost hidden" id="btn-cancel-tenant">Cancel</button>
         </div>
         <div class="table-wrap">
-          <table class="admin-table" id="teams-table">
-            <thead><tr><th>Team / Business Unit</th><th>Created</th><th></th></tr></thead>
+          <table class="admin-table" id="tenants-table">
+            <thead><tr><th>Tenant</th><th>Slug</th><th>Admins</th><th>Status</th><th>Created</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
       </div>
 
-      <div id="tab-users" class="tab-content hidden">
+      <div id="tab-admins" class="tab-content hidden">
         <div class="tab-actions">
-          <input type="text" id="new-user-username" placeholder="Username">
-          <input type="password" id="new-user-password" placeholder="Password (min 6 chars)">
-          <select id="new-user-team"><option value="">No team</option></select>
-          <select id="new-user-role">
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
+          <select id="admin-tenant"></select>
+          <input type="text" id="admin-username" placeholder="Username">
+          <input type="text" id="admin-display-name" placeholder="Display name">
+          <input type="email" id="admin-email" placeholder="Email">
+          <input type="password" id="admin-password" placeholder="Password (min 6 chars)">
+          <select id="admin-role">
+            <option value="tenant_admin">Tenant Admin</option>
+            <option value="platform_admin">Platform Admin</option>
           </select>
-          <button class="btn btn-primary" id="btn-add-user">Add User</button>
+          <button class="btn btn-primary" id="btn-save-admin">Save Admin</button>
+          <button class="btn btn-ghost hidden" id="btn-cancel-admin">Cancel</button>
         </div>
         <div class="table-wrap">
-          <table class="admin-table" id="users-table">
-            <thead><tr><th>Username</th><th>Role</th><th>Team</th><th>Created</th><th></th></tr></thead>
+          <table class="admin-table" id="admins-table">
+            <thead><tr><th>Username</th><th>Role</th><th>Tenant</th><th>Email</th><th>Status</th><th>Created</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>

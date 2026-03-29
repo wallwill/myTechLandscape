@@ -7,6 +7,11 @@ module: src/routes/tcm.js
 
 Hierarchical taxonomy of technical capabilities. Seeded from CNCF landscape categories. Fully extensible per tenant.
 
+Governance linkage:
+- capabilities are the routing layer for request queues
+- capability owners are assigned through tenant operating-model configuration
+- evaluator pools can also be assigned per capability
+
 ## Endpoints
 
 ### GET /api/tcm

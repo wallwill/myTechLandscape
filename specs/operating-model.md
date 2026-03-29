@@ -5,46 +5,96 @@ module: src/routes/operating-model.js
 
 # Operating Model
 
-Defines users, roles, and role assignments within a tenant.
+Defines tenant-scoped users and role assignments within a tenant.
+
+This route manages general tenant users. Platform-level tenant creation and tenant-admin creation are handled by [tenants.md](tenants.md).
 
 ## Roles
 
 | Role | Scope | Key Permissions |
 |------|-------|----------------|
-| `platform_admin` | Cross-tenant | Create tenants, impersonate, view all data |
-| `tenant_admin` | Tenant | Manage users/roles, configure tenant, all data access |
-| `tco` | Capability | Own capabilities, approve state transitions, assign evaluators |
-| `technology_owner` | Technology | Author decision records, update cards, manage patterns |
-| `evaluator` | Technology (time-boxed) | Submit evaluation findings |
-| `lob_admin` | LOB within tenant | Manage LOB exceptions, LOB-specific tags |
-| `member` | Tenant | Read-only access to cards and decisions |
-| `proposer` | Tenant | Submit technology proposals |
+| `platform_admin` | Cross-tenant | Create tenants, manage tenant admins, cross-tenant support |
+| `tenant_admin` | Tenant | Manage tenant users and tenant config |
+| `tco` | Capability | Own capabilities, approve lifecycle transitions |
+| `technology_owner` | Technology | Manage technology card details and patterns |
+| `lob_admin` | LOB within tenant | Manage LOB exceptions and tags |
+| `evaluator` | Tenant | Run and document evaluations |
+| `proposer` | Tenant | Submit proposals |
+| `member` | Tenant | Baseline tenant user role |
+
+Planned operating-model extensions:
+- tenant admins assign capability owners per capability
+- tenant admins assign evaluator pools per capability
+- requestor, capability owner, and evaluator workflows are defined in [governance-workflow.md](governance-workflow.md)
 
 ## Endpoints
 
 ### GET /api/users
-List users in current tenant.
-Requires: `requireRole(tenant_admin)`
+List users in the current tenant.
 
-**Response**: `Array<UserSummary>`
+Requires: `tenant_admin`
+
+**Response**:
+```json
+[
+  {
+    "id": "user-id",
+    "username": "jdoe",
+    "email": "jdoe@example.com",
+    "display_name": "Jane Doe",
+    "role": "member",
+    "lob": null,
+    "is_active": 1,
+    "created_at": 1710000000
+  }
+]
+```
 
 ### POST /api/users
-Invite a user to the tenant.
-Requires: `requireRole(tenant_admin)`
+Create a tenant-scoped user.
 
-**Request**: `{ username, email, role, capability_id? (for tco), lob? (for lob_admin) }`
+Requires: `tenant_admin`
+
+**Request**:
+```json
+{
+  "username": "jdoe",
+  "email": "jdoe@example.com",
+  "password": "secret123",
+  "role": "member",
+  "capability_id": "optional-capability-id",
+  "lob": "optional-lob"
+}
+```
+
+Notes:
+- `password` is required and must be at least 6 chars
+- `capability_id` is used only when creating a `tco`
+- `tenant_id` is inferred from resolved tenant context
 
 ### PUT /api/users/:id/role
-Change a user's role.
-Requires: `requireRole(tenant_admin)`
+Update a tenant user's role.
+
+Requires: `tenant_admin`
+
+**Request**:
+```json
+{
+  "role": "technology_owner"
+}
+```
 
 ### DELETE /api/users/:id
-Remove user from tenant.
-Requires: `requireRole(tenant_admin)`
-**Guard**: Cannot remove yourself.
+Soft-delete a tenant user by setting `is_active = 0`.
+
+Requires: `tenant_admin`
+
+**Guard**: cannot delete your own account
 
 ### GET /api/users/:id/assignments
-Get all technology/capability assignments for a user.
+Return a user's capability ownership and technology-card ownership within the current tenant.
+
+Requires: `requireTenantAccess`
 
 ## Data Model
 
@@ -58,9 +108,9 @@ CREATE TABLE users (
   display_name   TEXT,
   password_hash  TEXT NOT NULL,
   role           TEXT NOT NULL DEFAULT 'member',
-  lob            TEXT,                -- for lob_admin scope
+  lob            TEXT,
   is_active      INTEGER DEFAULT 1,
-  created_at     INTEGER DEFAULT (strftime('%s','now')),
+  created_at     BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
   UNIQUE(tenant_id, username)
 );
 ```
@@ -68,10 +118,10 @@ CREATE TABLE users (
 ### capability_ownership
 ```sql
 CREATE TABLE capability_ownership (
-  capability_id  TEXT NOT NULL REFERENCES capabilities(id),
-  user_id        TEXT NOT NULL REFERENCES users(id),
-  tenant_id      TEXT NOT NULL,
-  assigned_at    INTEGER DEFAULT (strftime('%s','now')),
+  capability_id TEXT NOT NULL REFERENCES capabilities(id),
+  user_id       TEXT NOT NULL REFERENCES users(id),
+  tenant_id     TEXT NOT NULL,
+  assigned_at   BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
   PRIMARY KEY (capability_id, user_id)
 );
 ```

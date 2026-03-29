@@ -257,6 +257,16 @@ h1 span {
 
 .team-selector-wrap select:focus { border-color: var(--brand); }
 
+.tenant-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
 /* User menu */
 .user-menu { position: relative; }
 
@@ -786,6 +796,8 @@ main { padding: 1.5rem; max-width: 1600px; margin: 0 auto; }
 }
 
 .role-admin  { background: #ede9fe; color: #6d28d9; }
+.role-platform_admin { background: #fee2e2; color: #b91c1c; }
+.role-tenant_admin { background: #ede9fe; color: #6d28d9; }
 .role-member { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
 
 /* ============================================================

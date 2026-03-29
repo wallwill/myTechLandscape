@@ -27,7 +27,14 @@ router.post('/login', async (req, res) => {
     req.session.tenantId   = req.tenant.id;
     req.session.tenantSlug = req.tenant.slug;
 
-    res.json({ id: user.id, username: user.username, role: user.role, tenantId: req.tenant.id });
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      tenantId: req.tenant.id,
+      tenantName: req.tenant.name,
+      tenantSlug: req.tenant.slug,
+    });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -41,11 +48,21 @@ router.get('/me', async (req, res) => {
   if (!req.session.userId) return res.json(null);
   try {
     const result = await db.query(
-      `SELECT id, username, role, tenant_id FROM users WHERE id = $1 AND is_active = 1`,
+      `SELECT u.id, u.username, u.role, u.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug
+       FROM users u
+       JOIN tenants t ON t.id = u.tenant_id
+       WHERE u.id = $1 AND u.is_active = 1`,
       [req.session.userId]
     );
     const user = result.rows[0];
-    res.json(user ? { id: user.id, username: user.username, role: user.role, tenantId: user.tenant_id } : null);
+    res.json(user ? {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      tenantId: user.tenant_id,
+      tenantName: user.tenant_name,
+      tenantSlug: user.tenant_slug,
+    } : null);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

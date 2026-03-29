@@ -5,7 +5,13 @@ module: src/routes/proposals.js
 
 # Technology Proposals
 
-Allow any tenant member to propose adding or updating a technology. TCOs/Technology Owners review and provide feedback.
+Status: transitional. This spec remains valid for the current implementation, but the longer-term intake model is the richer tenant-governance workflow described in [governance-workflow.md](governance-workflow.md).
+
+Allow tenant users to propose adding or updating a technology. TCOs and tenant admins review and provide feedback.
+
+Planned evolution:
+- `proposals` becomes the lightweight predecessor of `technology_requests`
+- request triage, evaluator assignment, and queue state move into the dedicated governance workflow
 
 ## Proposal Types
 | Type | Description |

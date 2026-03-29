@@ -25,6 +25,7 @@ app.use('/api', resolveTenant);
 
 // Routes
 app.use('/api/auth',         require('./src/routes/auth'));
+app.use('/api/assignments',  require('./src/routes/assignments'));
 app.use('/api/landscape',    require('./src/routes/landscape'));
 app.use('/api/tenants',      require('./src/routes/tenants'));
 app.use('/api/tcm',          require('./src/routes/tcm'));
