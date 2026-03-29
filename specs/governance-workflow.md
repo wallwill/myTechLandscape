@@ -1,11 +1,17 @@
 ---
 title: Governance Workflow Spec
-status: proposed
+status: partial
 ---
 
 # Governance Workflow
 
-This spec defines the target tenant-level operating model for technology governance: capability owners, technology evaluators, assignment queues, and new technology requests.
+This spec defines the tenant-level operating model for technology governance: implemented capability owners and evaluator assignment, plus planned assignment queues and technology requests.
+
+Current implementation status:
+- implemented: capability owner assignment APIs
+- implemented: capability evaluator assignment APIs
+- implemented: audit events for assignment and removal
+- planned: request intake, queueing, evaluation workflow, and decisions
 
 ## Objectives
 
@@ -267,6 +273,36 @@ ALTER TABLE evaluations ADD COLUMN score_summary TEXT;
 - `POST /api/capability-evaluators`
 - `DELETE /api/capability-evaluators/:capabilityId/:userId`
 
+Implemented behavior:
+- all endpoints are mounted from `src/routes/governance.js` under `/api`
+- `GET` endpoints require `tenant_admin` or `tco`
+- `POST` and `DELETE` endpoints require `tenant_admin`
+- assignment APIs validate tenant-scoped capability and user existence
+- owner assignment updates `capabilities.owner_user_id` when unset, and owner removal re-points it to the earliest remaining owner or `null`
+
+### Tenant Operating Model Response Shape
+`GET /api/capability-owners` and `GET /api/capability-evaluators` return capability-grouped rows:
+
+```json
+[
+  {
+    "capability_id": "capability-id",
+    "capability_name": "Platform Engineering",
+    "parent_id": null,
+    "users": [
+      {
+        "id": "user-id",
+        "username": "jdoe",
+        "display_name": "Jane Doe",
+        "email": "jdoe@example.com",
+        "role": "tco",
+        "assigned_at": 1710000000
+      }
+    ]
+  }
+]
+```
+
 ### Technology Requests
 - `GET /api/technology-requests`
 - `POST /api/technology-requests`
@@ -328,3 +364,8 @@ Write audit events for:
 - role assignment changes
 - technology creation from request
 
+Implemented today:
+- `capability_owner` `assign`
+- `capability_owner` `remove`
+- `capability_evaluator` `assign`
+- `capability_evaluator` `remove`

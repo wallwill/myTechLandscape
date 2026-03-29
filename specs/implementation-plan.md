@@ -12,6 +12,13 @@ This plan converts the governance workflow into an implementable phased roadmap 
 Goal:
 - Give tenant admins enough control to configure governance roles and capability ownership
 
+Status:
+- implemented: capability owner assignment APIs
+- implemented: evaluator assignment APIs
+- implemented: tenant admin UI for tenant users and category assignments
+- implemented: audit entries for capability assignment changes
+- remaining: broader workflow settings beyond assignment foundation
+
 Deliverables:
 - capability owner assignment APIs
 - evaluator assignment APIs
@@ -127,4 +134,3 @@ Exit criteria:
 - current `proposals` can be retained temporarily as a transitional intake mechanism
 - request intake should eventually subsume proposal-style new technology flow
 - current tenant admin UI should evolve from tenant CRUD toward tenant-local governance configuration
-

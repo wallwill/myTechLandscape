@@ -29,7 +29,7 @@ router.get('/', requireRole('tenant_admin'), async (req, res) => {
 
 // POST /api/users
 router.post('/', requireRole('tenant_admin'), async (req, res) => {
-  const { username, email, password, role, capability_id, lob } = req.body;
+  const { username, email, display_name, password, role, capability_id, lob } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
   if (password.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
 
@@ -44,8 +44,9 @@ router.post('/', requireRole('tenant_admin'), async (req, res) => {
     const id = randomUUID();
     const hash = bcrypt.hashSync(password, 10);
     await db.query(
-      `INSERT INTO users (id, tenant_id, username, email, password_hash, role, lob) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, tenantId, username, email||null, hash, role||'member', lob||null]
+      `INSERT INTO users (id, tenant_id, username, email, display_name, password_hash, role, lob)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, tenantId, username, email||null, display_name||null, hash, role||'member', lob||null]
     );
 
     if (capability_id && role === 'tco') {

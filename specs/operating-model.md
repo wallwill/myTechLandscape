@@ -5,7 +5,7 @@ module: src/routes/operating-model.js
 
 # Operating Model
 
-Defines tenant-scoped users and role assignments within a tenant.
+Defines tenant-scoped users and baseline role assignments within a tenant.
 
 This route manages general tenant users. Platform-level tenant creation and tenant-admin creation are handled by [tenants.md](tenants.md).
 
@@ -22,10 +22,10 @@ This route manages general tenant users. Platform-level tenant creation and tena
 | `proposer` | Tenant | Submit proposals |
 | `member` | Tenant | Baseline tenant user role |
 
-Planned operating-model extensions:
-- tenant admins assign capability owners per capability
-- tenant admins assign evaluator pools per capability
-- requestor, capability owner, and evaluator workflows are defined in [governance-workflow.md](governance-workflow.md)
+Implemented with related governance extensions:
+- tenant admins can create tenant users with `display_name`
+- tenant admins can update tenant-scoped roles and deactivate users
+- capability owner and evaluator pool assignment is defined in [governance-workflow.md](governance-workflow.md)
 
 ## Endpoints
 
@@ -60,6 +60,7 @@ Requires: `tenant_admin`
 {
   "username": "jdoe",
   "email": "jdoe@example.com",
+  "display_name": "Jane Doe",
   "password": "secret123",
   "role": "member",
   "capability_id": "optional-capability-id",
@@ -69,6 +70,7 @@ Requires: `tenant_admin`
 
 Notes:
 - `password` is required and must be at least 6 chars
+- `display_name` is optional
 - `capability_id` is used only when creating a `tco`
 - `tenant_id` is inferred from resolved tenant context
 
@@ -84,6 +86,11 @@ Requires: `tenant_admin`
 }
 ```
 
+**Response**:
+```json
+{ "ok": true }
+```
+
 ### DELETE /api/users/:id
 Soft-delete a tenant user by setting `is_active = 0`.
 
@@ -91,10 +98,34 @@ Requires: `tenant_admin`
 
 **Guard**: cannot delete your own account
 
+**Response**:
+```json
+{ "ok": true }
+```
+
 ### GET /api/users/:id/assignments
 Return a user's capability ownership and technology-card ownership within the current tenant.
 
 Requires: `requireTenantAccess`
+
+**Response**:
+```json
+{
+  "capabilities": [
+    {
+      "id": "capability-id",
+      "name": "Platform Engineering"
+    }
+  ],
+  "technology_cards": [
+    {
+      "name": "Kubernetes",
+      "tech_id": "kubernetes",
+      "state": "Invest"
+    }
+  ]
+}
+```
 
 ## Data Model
 

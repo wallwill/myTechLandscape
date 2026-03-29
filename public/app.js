@@ -13,6 +13,10 @@ const STATE = {
   currentProject: null,
   adminTenants: [],
   adminUsers: [],
+  tenantUsers: [],
+  capabilities: [],
+  capabilityOwners: [],
+  capabilityEvaluators: [],
   editingTenantId: null,
   editingAdminId: null,
 };
@@ -116,9 +120,18 @@ function updateUserMenu() {
   document.getElementById('user-display-name').textContent = STATE.user.username;
   document.getElementById('user-avatar').textContent = STATE.user.username[0].toUpperCase();
   document.getElementById('tenant-label').textContent = STATE.user.tenantName || STATE.user.tenantSlug || 'Unknown tenant';
-  if (STATE.user.role === 'platform_admin') {
+  document.getElementById('role-label').textContent = formatRoleLabel(STATE.user.role);
+  if (['platform_admin', 'tenant_admin'].includes(STATE.user.role)) {
     document.getElementById('btn-admin-panel').classList.remove('hidden');
   }
+}
+
+function formatRoleLabel(role) {
+  if (!role) return 'Unknown';
+  return role
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function populateCategoryFilter() {
@@ -359,13 +372,36 @@ function applyStageSelectStyle(el, stage) {
 }
 
 async function openAdminModal() {
-  if (STATE.user.role !== 'platform_admin') return;
+  if (!['platform_admin', 'tenant_admin'].includes(STATE.user.role)) return;
   document.getElementById('admin-modal').classList.remove('hidden');
-  await Promise.all([refreshAdminTenants(), refreshAdminUsers()]);
+  configureAdminTabs();
+
+  const work = [refreshTenantUsers(), refreshCapabilityRoles()];
+  if (STATE.user.role === 'platform_admin') {
+    work.push(refreshAdminTenants(), refreshAdminUsers());
+  }
+  await Promise.all(work);
 }
 
 function closeAdminModal() {
   document.getElementById('admin-modal').classList.add('hidden');
+}
+
+function configureAdminTabs() {
+  const isPlatform = STATE.user.role === 'platform_admin';
+  document.getElementById('admin-modal-subtitle').textContent = isPlatform
+    ? 'Manage tenants, tenant admins, tenant users, and category ownership'
+    : `Manage users and category ownership for ${STATE.user.tenantName || STATE.user.tenantSlug}`;
+
+  document.querySelectorAll('.admin-tab[data-scope="platform"]').forEach(el => {
+    el.classList.toggle('hidden', !isPlatform);
+  });
+  document.querySelectorAll('.admin-tab[data-scope="tenant"]').forEach(el => {
+    el.classList.remove('hidden');
+  });
+
+  const defaultTab = isPlatform ? 'tenants' : 'users';
+  switchAdminTab(defaultTab);
 }
 
 async function refreshAdminTenants() {
@@ -456,6 +492,186 @@ async function refreshAdminUsers() {
       </td>
     </tr>
   `).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">No admin users yet</td></tr>';
+}
+
+async function refreshTenantUsers() {
+  STATE.tenantUsers = await api('GET', '/api/users');
+  document.querySelector('#tenant-users-table tbody').innerHTML = STATE.tenantUsers.map(u => `
+    <tr>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td class="muted">${esc(u.display_name || '-')}</td>
+      <td>
+        <select onchange="changeTenantUserRole('${esc(u.id)}', this.value)" ${u.id === STATE.user.id ? 'disabled' : ''}>
+          ${renderRoleOptions(u.role)}
+        </select>
+      </td>
+      <td class="muted">${esc(u.email || '-')}</td>
+      <td>${u.is_active ? 'Active' : 'Inactive'}</td>
+      <td class="muted">${new Date(u.created_at * 1000).toLocaleDateString()}</td>
+      <td>${u.id !== STATE.user.id && u.is_active ? `<button class="btn-icon btn-danger-icon" onclick="deleteTenantUser('${esc(u.id)}')">Deactivate</button>` : ''}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">No tenant users yet</td></tr>';
+
+  populateCapabilityRoleSelectors();
+}
+
+function renderRoleOptions(selectedRole) {
+  const roles = [
+    ['member', 'Member'],
+    ['proposer', 'Proposer'],
+    ['evaluator', 'Evaluator'],
+    ['technology_owner', 'Technology Owner'],
+    ['lob_admin', 'LOB Admin'],
+    ['tco', 'Category Owner'],
+    ['tenant_admin', 'Tenant Admin'],
+  ];
+
+  return roles.map(([value, label]) =>
+    `<option value="${value}" ${value === selectedRole ? 'selected' : ''}>${label}</option>`
+  ).join('');
+}
+
+async function saveTenantUser() {
+  const username = document.getElementById('tenant-user-username').value.trim();
+  const display_name = document.getElementById('tenant-user-display-name').value.trim();
+  const email = document.getElementById('tenant-user-email').value.trim();
+  const password = document.getElementById('tenant-user-password').value;
+  const role = document.getElementById('tenant-user-role').value;
+
+  if (!username || !password) return alert('Username and password are required');
+
+  try {
+    await api('POST', '/api/users', {
+      username,
+      display_name,
+      email,
+      password,
+      role,
+    });
+    resetTenantUserForm();
+    await Promise.all([refreshTenantUsers(), refreshCapabilityRoles()]);
+  } catch (err) {
+    alert(err.message || 'Failed to create user');
+  }
+}
+
+function resetTenantUserForm() {
+  document.getElementById('tenant-user-username').value = '';
+  document.getElementById('tenant-user-display-name').value = '';
+  document.getElementById('tenant-user-email').value = '';
+  document.getElementById('tenant-user-password').value = '';
+  document.getElementById('tenant-user-role').value = 'member';
+}
+
+async function changeTenantUserRole(id, role) {
+  try {
+    await api('PUT', `/api/users/${id}/role`, { role });
+    await refreshTenantUsers();
+  } catch (err) {
+    alert(err.message || 'Failed to update user role');
+    await refreshTenantUsers();
+  }
+}
+
+async function deleteTenantUser(id) {
+  if (!confirm('Deactivate this tenant user?')) return;
+  try {
+    await api('DELETE', `/api/users/${id}`);
+    await Promise.all([refreshTenantUsers(), refreshCapabilityRoles()]);
+  } catch (err) {
+    alert(err.message || 'Failed to deactivate user');
+  }
+}
+
+async function refreshCapabilityRoles() {
+  const [capabilities, owners, evaluators] = await Promise.all([
+    api('GET', '/api/tcm?flat=true'),
+    api('GET', '/api/capability-owners'),
+    api('GET', '/api/capability-evaluators'),
+  ]);
+
+  STATE.capabilities = capabilities;
+  STATE.capabilityOwners = owners;
+  STATE.capabilityEvaluators = evaluators;
+
+  populateCapabilityRoleSelectors();
+  renderCapabilityRolesTable();
+}
+
+function populateCapabilityRoleSelectors() {
+  const capabilitySelect = document.getElementById('capability-role-capability');
+  const userSelect = document.getElementById('capability-role-user');
+  const categories = STATE.capabilities.filter(c => !c.parent_id);
+
+  capabilitySelect.innerHTML = categories
+    .map(c => `<option value="${c.id}">${esc(c.name)}</option>`)
+    .join('') || '<option value="">No categories</option>';
+
+  userSelect.innerHTML = STATE.tenantUsers
+    .filter(u => u.is_active)
+    .map(u => `<option value="${u.id}">${esc(u.display_name || u.username)} (${esc(u.username)})</option>`)
+    .join('') || '<option value="">No users</option>';
+}
+
+function renderCapabilityRolesTable() {
+  const ownersByCapability = new Map(STATE.capabilityOwners.map(item => [item.capability_id, item.users]));
+  const evaluatorsByCapability = new Map(STATE.capabilityEvaluators.map(item => [item.capability_id, item.users]));
+  const categories = STATE.capabilities.filter(c => !c.parent_id);
+
+  document.querySelector('#capability-roles-table tbody').innerHTML = categories.map(capability => `
+    <tr>
+      <td><strong>${esc(capability.name)}</strong></td>
+      <td>${renderAssignmentPills(capability.id, ownersByCapability.get(capability.id) || [], 'owner')}</td>
+      <td>${renderAssignmentPills(capability.id, evaluatorsByCapability.get(capability.id) || [], 'evaluator')}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="3" class="muted" style="text-align:center;padding:1rem">No categories configured yet</td></tr>';
+}
+
+function renderAssignmentPills(capabilityId, users, kind) {
+  if (!users.length) return '<span class="muted">None assigned</span>';
+
+  return users.map(user => `
+    <span class="assignment-pill">
+      ${esc(user.display_name || user.username)}
+      <button class="assignment-pill-remove" onclick="removeCapabilityAssignment('${esc(kind)}', '${esc(capabilityId)}', '${esc(user.id)}')" aria-label="Remove">&times;</button>
+    </span>
+  `).join('');
+}
+
+async function assignCapabilityOwner() {
+  const capability_id = document.getElementById('capability-role-capability').value;
+  const user_id = document.getElementById('capability-role-user').value;
+  if (!capability_id || !user_id) return alert('Capability and user are required');
+
+  try {
+    await api('POST', '/api/capability-owners', { capability_id, user_id });
+    await refreshCapabilityRoles();
+  } catch (err) {
+    alert(err.message || 'Failed to assign category owner');
+  }
+}
+
+async function assignCapabilityEvaluator() {
+  const capability_id = document.getElementById('capability-role-capability').value;
+  const user_id = document.getElementById('capability-role-user').value;
+  if (!capability_id || !user_id) return alert('Capability and user are required');
+
+  try {
+    await api('POST', '/api/capability-evaluators', { capability_id, user_id });
+    await refreshCapabilityRoles();
+  } catch (err) {
+    alert(err.message || 'Failed to assign evaluator');
+  }
+}
+
+async function removeCapabilityAssignment(kind, capabilityId, userId) {
+  const endpoint = kind === 'owner' ? 'capability-owners' : 'capability-evaluators';
+  try {
+    await api('DELETE', `/api/${endpoint}/${capabilityId}/${userId}`);
+    await refreshCapabilityRoles();
+  } catch (err) {
+    alert(err.message || 'Failed to remove assignment');
+  }
 }
 
 function resetAdminForm() {
@@ -556,6 +772,8 @@ function switchAdminTab(tab) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('tab-tenants').classList.toggle('hidden', tab !== 'tenants');
   document.getElementById('tab-admins').classList.toggle('hidden', tab !== 'admins');
+  document.getElementById('tab-users').classList.toggle('hidden', tab !== 'users');
+  document.getElementById('tab-capability-roles').classList.toggle('hidden', tab !== 'capability-roles');
 }
 
 function toggleUserDropdown() {
@@ -637,8 +855,12 @@ document.getElementById('btn-save-tenant').addEventListener('click', saveTenant)
 document.getElementById('btn-cancel-tenant').addEventListener('click', resetTenantForm);
 document.getElementById('btn-save-admin').addEventListener('click', saveAdmin);
 document.getElementById('btn-cancel-admin').addEventListener('click', resetAdminForm);
+document.getElementById('btn-save-tenant-user').addEventListener('click', saveTenantUser);
+document.getElementById('btn-assign-capability-owner').addEventListener('click', assignCapabilityOwner);
+document.getElementById('btn-assign-capability-evaluator').addEventListener('click', assignCapabilityEvaluator);
 document.getElementById('tenant-name').addEventListener('keydown', e => { if (e.key === 'Enter') saveTenant(); });
 document.getElementById('tenant-slug').addEventListener('keydown', e => { if (e.key === 'Enter') saveTenant(); });
+document.getElementById('tenant-user-password').addEventListener('keydown', e => { if (e.key === 'Enter') saveTenantUser(); });
 document.querySelectorAll('.admin-tab').forEach(t => t.addEventListener('click', () => switchAdminTab(t.dataset.tab)));
 
 document.getElementById('password-close').addEventListener('click', closePasswordModal);
@@ -648,4 +870,5 @@ document.getElementById('password-modal').addEventListener('click', e => { if (e
 
 resetTenantForm();
 resetAdminForm();
+resetTenantUserForm();
 init();

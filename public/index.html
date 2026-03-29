@@ -49,6 +49,10 @@
           <label>Tenant</label>
           <div class="tenant-pill" id="tenant-label">Default</div>
         </div>
+        <div class="team-selector-wrap">
+          <label>Role</label>
+          <div class="tenant-pill" id="role-label">Member</div>
+        </div>
         <button id="btn-export-csv" class="btn btn-outline" title="Download assignments as CSV">&#8595; CSV</button>
         <button id="btn-export-pdf" class="btn btn-outline" title="Print or save as PDF">&#9113; Print</button>
         <div class="user-menu" id="user-menu">
@@ -145,14 +149,16 @@
     <div class="modal-header">
       <div class="modal-header-text">
         <div class="modal-title">Admin Panel</div>
-        <div class="modal-subtitle">Manage tenants and tenant administrator accounts</div>
+        <div class="modal-subtitle" id="admin-modal-subtitle">Manage tenants, users, and category ownership</div>
       </div>
       <button class="modal-close" id="admin-close" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div class="admin-tabs">
-        <button class="admin-tab active" data-tab="tenants">Tenants</button>
-        <button class="admin-tab" data-tab="admins">Tenant Admins</button>
+        <button class="admin-tab active" data-tab="tenants" data-scope="platform">Tenants</button>
+        <button class="admin-tab" data-tab="admins" data-scope="platform">Tenant Admins</button>
+        <button class="admin-tab hidden" data-tab="users" data-scope="tenant">Tenant Users</button>
+        <button class="admin-tab hidden" data-tab="capability-roles" data-scope="tenant">Category Owners</button>
       </div>
 
       <div id="tab-tenants" class="tab-content">
@@ -187,6 +193,46 @@
         <div class="table-wrap">
           <table class="admin-table" id="admins-table">
             <thead><tr><th>Username</th><th>Role</th><th>Tenant</th><th>Email</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-users" class="tab-content hidden">
+        <div class="tab-actions">
+          <input type="text" id="tenant-user-username" placeholder="Username">
+          <input type="text" id="tenant-user-display-name" placeholder="Display name">
+          <input type="email" id="tenant-user-email" placeholder="Email">
+          <input type="password" id="tenant-user-password" placeholder="Password (min 6 chars)">
+          <select id="tenant-user-role">
+            <option value="member">Member</option>
+            <option value="proposer">Proposer</option>
+            <option value="evaluator">Evaluator</option>
+            <option value="technology_owner">Technology Owner</option>
+            <option value="lob_admin">LOB Admin</option>
+            <option value="tco">Category Owner</option>
+            <option value="tenant_admin">Tenant Admin</option>
+          </select>
+          <button class="btn btn-primary" id="btn-save-tenant-user">Create User</button>
+        </div>
+        <div class="table-wrap">
+          <table class="admin-table" id="tenant-users-table">
+            <thead><tr><th>Username</th><th>Display Name</th><th>Role</th><th>Email</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-capability-roles" class="tab-content hidden">
+        <div class="tab-actions">
+          <select id="capability-role-capability"></select>
+          <select id="capability-role-user"></select>
+          <button class="btn btn-primary" id="btn-assign-capability-owner">Assign Category Owner</button>
+          <button class="btn btn-outline" id="btn-assign-capability-evaluator">Assign Evaluator</button>
+        </div>
+        <div class="table-wrap">
+          <table class="admin-table" id="capability-roles-table">
+            <thead><tr><th>Category</th><th>Owners</th><th>Evaluators</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>

@@ -57,8 +57,9 @@ Immutable record of a lifecycle state transition and its rationale.
 - Login is tenant-aware and requires tenant context
 - Platform admins create tenants and tenant admin users
 - Tenant admins manage users inside their tenant
-- The current admin SPA is focused on tenant CRUD and tenant-admin CRUD
-- The next major workflow is tenant-configured governance for requests, queues, evaluations, and decisions
+- The admin SPA now supports tenant-local user management and category owner/evaluator assignment
+- Governance foundation is implemented for capability ownership and evaluator pools
+- The next major workflow is request intake, queueing, evaluations, and decisions
 
 ## Architecture Modules
 
@@ -67,8 +68,8 @@ Immutable record of a lifecycle state transition and its rationale.
 | [tenants.md](tenants.md) | src/routes/tenants.js | Tenant CRUD and tenant-admin management |
 | [auth.md](auth.md) | src/routes/auth.js | Tenant-aware session authentication |
 | [operating-model.md](operating-model.md) | src/routes/operating-model.js | Tenant user CRUD and role assignment |
-| [governance-workflow.md](governance-workflow.md) | proposed | Capability owners, evaluators, queues, and request workflow |
-| [implementation-plan.md](implementation-plan.md) | proposed | Phased rollout plan for governance workflow |
+| [governance-workflow.md](governance-workflow.md) | src/routes/governance.js | Implemented capability owner and evaluator assignment foundation, plus planned request workflow |
+| [implementation-plan.md](implementation-plan.md) | specs/implementation-plan.md | Phased rollout plan for governance workflow |
 | [tcm.md](tcm.md) | src/routes/tcm.js | Technical Capability Model CRUD |
 | [technologies.md](technologies.md) | src/routes/technologies.js | Technology registry and cards |
 | [lifecycle.md](lifecycle.md) | src/routes/lifecycle.js | State transitions and decision records |

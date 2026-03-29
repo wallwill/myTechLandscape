@@ -9,8 +9,33 @@ const { randomUUID } = require('crypto');
 const db = require('../db/index');
 const { requireRole } = require('../middleware/rbac');
 const { requireTenantAccess } = require('../middleware/tenant');
+const { fetchLandscape } = require('./landscape');
 
 const router = express.Router();
+
+async function ensureCncfCategoryCapabilities(tenantId) {
+  const projects = fetchLandscape();
+  const categoryNames = [...new Set(projects.map(p => p.category).filter(Boolean))].sort();
+  if (!categoryNames.length) return;
+
+  const existingResult = await db.query(
+    `SELECT name
+       FROM capabilities
+      WHERE tenant_id = $1
+        AND parent_id IS NULL`,
+    [tenantId]
+  );
+  const existingNames = new Set(existingResult.rows.map(row => row.name));
+
+  for (const name of categoryNames) {
+    if (existingNames.has(name)) continue;
+    await db.query(
+      `INSERT INTO capabilities (id, tenant_id, name, parent_id, source)
+       VALUES ($1, $2, $3, NULL, 'cncf')`,
+      [randomUUID(), tenantId, name]
+    );
+  }
+}
 
 // GET /api/tcm
 router.get('/', requireTenantAccess, async (req, res) => {
@@ -18,6 +43,8 @@ router.get('/', requireTenantAccess, async (req, res) => {
   const flat = req.query.flat === 'true';
 
   try {
+    await ensureCncfCategoryCapabilities(tenantId);
+
     const result = await db.query(
       `SELECT * FROM capabilities WHERE tenant_id = $1 AND is_active = 1 ORDER BY name`,
       [tenantId]
@@ -44,6 +71,22 @@ router.get('/', requireTenantAccess, async (req, res) => {
   }
 });
 
+// POST /api/tcm/sync-categories
+router.post('/sync-categories', requireRole('tenant_admin'), async (req, res) => {
+  try {
+    await ensureCncfCategoryCapabilities(req.tenant.id);
+    const result = await db.query(
+      `SELECT * FROM capabilities
+       WHERE tenant_id = $1 AND is_active = 1
+       ORDER BY name`,
+      [req.tenant.id]
+    );
+    res.json({ ok: true, items: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tcm
 router.post('/', requireRole('tco', 'tenant_admin'), async (req, res) => {
   const { name, description, parent_id, owner_user_id } = req.body;
@@ -57,6 +100,15 @@ router.post('/', requireRole('tco', 'tenant_admin'), async (req, res) => {
       `INSERT INTO capabilities (id, tenant_id, name, description, parent_id, owner_user_id) VALUES ($1,$2,$3,$4,$5,$6)`,
       [id, tenantId, name, description || null, parent_id || null, owner_user_id || null]
     );
+
+    if (owner_user_id) {
+      await db.query(
+        `INSERT INTO capability_ownership (capability_id, user_id, tenant_id)
+         VALUES ($1,$2,$3)
+         ON CONFLICT DO NOTHING`,
+        [id, owner_user_id, tenantId]
+      );
+    }
 
     const result = await db.query(`SELECT * FROM capabilities WHERE id = $1`, [id]);
     res.status(201).json(result.rows[0]);
@@ -76,6 +128,16 @@ router.put('/:id', requireRole('tco', 'tenant_admin'), async (req, res) => {
        WHERE id = $4 AND tenant_id = $5`,
       [name || null, description || null, owner_user_id || null, req.params.id, req.tenant.id]
     );
+
+    if (owner_user_id) {
+      await db.query(
+        `INSERT INTO capability_ownership (capability_id, user_id, tenant_id)
+         VALUES ($1,$2,$3)
+         ON CONFLICT DO NOTHING`,
+        [req.params.id, owner_user_id, req.tenant.id]
+      );
+    }
+
     const result = await db.query(`SELECT * FROM capabilities WHERE id = $1`, [req.params.id]);
     res.json(result.rows[0]);
   } catch (err) {

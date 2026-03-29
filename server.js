@@ -28,6 +28,7 @@ app.use('/api/auth',         require('./src/routes/auth'));
 app.use('/api/assignments',  require('./src/routes/assignments'));
 app.use('/api/landscape',    require('./src/routes/landscape'));
 app.use('/api/tenants',      require('./src/routes/tenants'));
+app.use('/api',              require('./src/routes/governance'));
 app.use('/api/tcm',          require('./src/routes/tcm'));
 app.use('/api/technologies', require('./src/routes/technologies'));
 app.use('/api/lifecycle',    require('./src/routes/lifecycle'));
