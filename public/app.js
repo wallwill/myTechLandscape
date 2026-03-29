@@ -1,3 +1,29 @@
+// --- Logger ---
+const LOG_LEVELS = { trace: 0, debug: 1, info: 2, warn: 3, error: 4, off: 5 };
+const logger = (() => {
+  let level = LOG_LEVELS[(localStorage.getItem('logLevel') || 'info')
+    .toLowerCase()] ?? LOG_LEVELS.info;
+
+  const fmt = (lvl, args) => [`[${lvl.toUpperCase()}]`, ...args];
+
+  return {
+    setLevel(l) {
+      level = LOG_LEVELS[l.toLowerCase()] ?? LOG_LEVELS.info;
+      localStorage.setItem('logLevel', l);
+      console.info(`[LOGGER] level set to ${l}`);
+    },
+    getLevel() { return Object.keys(LOG_LEVELS).find(k => LOG_LEVELS[k] === level); },
+    trace(...a) { if (level <= LOG_LEVELS.trace) console.debug(...fmt('trace', a)); },
+    debug(...a) { if (level <= LOG_LEVELS.debug) console.debug(...fmt('debug', a)); },
+    info(...a)  { if (level <= LOG_LEVELS.info)  console.info(...fmt('info',  a)); },
+    warn(...a)  { if (level <= LOG_LEVELS.warn)  console.warn(...fmt('warn',  a)); },
+    error(...a) { if (level <= LOG_LEVELS.error) console.error(...fmt('error', a)); },
+  };
+})();
+
+// Expose logger on window for console access: logger.setLevel('debug')
+window.logger = logger;
+
 const STAGES = [
   { value: 'Invest',    color: '#16a34a', bg: '#dcfce7', border: '#86efac' },
   { value: 'Maintain',  color: '#2563eb', bg: '#dbeafe', border: '#93c5fd' },
@@ -16,22 +42,32 @@ const STATE = {
 
 // --- API ---
 async function api(method, url, body) {
+  logger.debug(`→ ${method} ${url}`, body !== undefined ? body : '');
+  const t0 = performance.now();
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  const ms = (performance.now() - t0).toFixed(1);
+  if (!res.ok) {
+    logger.warn(`← ${method} ${url} ${res.status} (${ms}ms)`, data);
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  logger.trace(`← ${method} ${url} ${res.status} (${ms}ms)`, data);
   return data;
 }
 
 // --- Init ---
 async function init() {
+  logger.info('init: starting app');
   try {
     const me = await api('GET', '/api/auth/me');
-    if (!me) { showLogin(); return; }
+    if (!me) { logger.debug('init: no session, showing login'); showLogin(); return; }
     STATE.user = me;
+    logger.info('init: session found', { user: me.username, role: me.role });
     await startApp();
   } catch (e) {
+    logger.debug('init: auth check failed, showing login', e.message);
     showLogin();
   }
 }
@@ -43,25 +79,33 @@ function showLogin() {
 }
 
 async function startApp() {
+  logger.debug('startApp: loading teams and landscape');
   document.getElementById('login-overlay').classList.add('hidden');
   document.getElementById('main-app').classList.remove('hidden');
 
-  STATE.teams = await api('GET', '/api/teams');
-  STATE.currentTeamId = STATE.user.teamId || STATE.teams[0]?.id || null;
+  try {
+    STATE.teams = await api('GET', '/api/teams');
+    STATE.currentTeamId = STATE.user.teamId || STATE.teams[0]?.id || null;
+    logger.debug('startApp: teams loaded', { count: STATE.teams.length, currentTeamId: STATE.currentTeamId });
 
-  populateTeamSelector();
-  updateUserMenu();
+    populateTeamSelector();
+    updateUserMenu();
 
-  const [projects, assignments] = await Promise.all([
-    api('GET', '/api/landscape'),
-    STATE.currentTeamId ? api('GET', `/api/assignments?team_id=${STATE.currentTeamId}`) : Promise.resolve([]),
-  ]);
+    const [projects, assignments] = await Promise.all([
+      api('GET', '/api/landscape'),
+      STATE.currentTeamId ? api('GET', `/api/assignments?team_id=${STATE.currentTeamId}`) : Promise.resolve([]),
+    ]);
 
-  STATE.projects = projects;
-  buildAssignMap(assignments);
-  populateCategoryFilter();
-  render();
-  updateStats();
+    STATE.projects = projects;
+    logger.info('startApp: ready', { projects: projects.length, assignments: assignments.length, teamId: STATE.currentTeamId });
+    buildAssignMap(assignments);
+    populateCategoryFilter();
+    render();
+    updateStats();
+  } catch (e) {
+    logger.error('startApp: failed to load', e.message);
+    document.getElementById('app').innerHTML = `<div class="no-results">Failed to load: ${esc(e.message)}</div>`;
+  }
 }
 
 function buildAssignMap(assignments) {
@@ -83,6 +127,7 @@ function populateTeamSelector() {
 
 async function onTeamChange() {
   STATE.currentTeamId = parseInt(document.getElementById('team-selector').value) || null;
+  logger.debug('onTeamChange', { currentTeamId: STATE.currentTeamId });
   if (!STATE.currentTeamId) { STATE.assignMap = {}; render(); updateStats(); return; }
   const assignments = await api('GET', `/api/assignments?team_id=${STATE.currentTeamId}`);
   buildAssignMap(assignments);
@@ -219,6 +264,7 @@ function updateStats() {
 
 // --- Detail Modal ---
 async function openDetailModal(projectId) {
+  logger.debug('openDetailModal', { projectId });
   const p = STATE.projects.find(x => x.id === projectId);
   if (!p) return;
   STATE.currentProject = p;
@@ -289,6 +335,7 @@ async function saveDetailModal() {
   const stage = document.getElementById('modal-stage').value;
   const owner = document.getElementById('modal-owner').value.trim();
   const notes = document.getElementById('modal-notes').value.trim();
+  logger.info('saveDetailModal', { projectId: p.id, name: p.name, stage, owner });
 
   await api('POST', '/api/assignments', {
     projectId: p.id, projectName: p.name, stage, owner, notes, teamId: STATE.currentTeamId,
@@ -462,10 +509,13 @@ async function handleLogin(e) {
   const password = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-error');
   errEl.classList.add('hidden');
+  logger.info('handleLogin: attempting login', { username });
   try {
     STATE.user = await api('POST', '/api/auth/login', { username, password });
+    logger.info('handleLogin: login successful', { username, role: STATE.user.role });
     await startApp();
   } catch (err) {
+    logger.warn('handleLogin: login failed', { username, error: err.message });
     errEl.textContent = err.message || 'Login failed';
     errEl.classList.remove('hidden');
   }

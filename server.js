@@ -37,6 +37,9 @@ app.use('/api/metrics',      require('./src/routes/metrics'));
 app.use('/api/proposals',    require('./src/routes/proposals'));
 app.use('/api/audit',        require('./src/routes/audit'));
 app.use('/api/reporting',    require('./src/routes/reporting'));
+app.use('/api/teams',        require('./src/routes/teams'));
+app.use('/api/assignments',  require('./src/routes/assignments'));
+app.use('/api/export',       require('./src/routes/export'));
 
 async function start() {
   await initDb();
